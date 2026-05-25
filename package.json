@@ -6,7 +6,7 @@
     "start": "node index.js"
   },
   "dependencies": {
-    "aternos-api": "^0.0.5",
-    "discord.js": "^14.21.0"
+    "discord.js": "^14.21.0",
+    "puppeteer": "^24.0.0"
   }
 }
