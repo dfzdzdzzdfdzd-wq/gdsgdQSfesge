@@ -1,20 +1,20 @@
 const { Client, GatewayIntentBits, SlashCommandBuilder, REST, Routes } = require('discord.js');
-const { Aternos } = require('aternos-api');
+const puppeteer = require('puppeteer');
 
-// Railway Variables
 const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
 const GUILD_ID = process.env.GUILD_ID;
 
 const ATERNOS_USER = process.env.ATERNOS_USER;
 const ATERNOS_PASSWORD = process.env.ATERNOS_PASSWORD;
+const ATERNOS_SERVER = process.env.ATERNOS_SERVER;
 
 const client = new Client({
     intents: [GatewayIntentBits.Guilds]
 });
 
 client.once('ready', () => {
-    console.log(`✅ Connecté en tant que ${client.user.tag}`);
+    console.log(`✅ Bot connecté : ${client.user.tag}`);
 });
 
 client.on('interactionCreate', async interaction => {
@@ -24,18 +24,42 @@ client.on('interactionCreate', async interaction => {
         await interaction.reply('⏳ Démarrage du serveur Aternos...');
 
         try {
-            const aternos = new Aternos();
-            await aternos.login(ATERNOS_USER, ATERNOS_PASSWORD);
+            const browser = await puppeteer.launch({
+                headless: true,
+                args: ['--no-sandbox', '--disable-setuid-sandbox']
+            });
 
-            const servers = await aternos.getServers();
-            const server = servers[0];
+            const page = await browser.newPage();
 
-            await server.start();
+            await page.goto('https://aternos.org/go/', {
+                waitUntil: 'networkidle2'
+            });
 
-            await interaction.editReply('✅ Serveur Minecraft démarré !');
+            // Login
+            await page.type('input[name="user"]', ATERNOS_USER);
+            await page.type('input[name="password"]', ATERNOS_PASSWORD);
+
+            await Promise.all([
+                page.click('button[type="submit"]'),
+                page.waitForNavigation()
+            ]);
+
+            // Ouvrir le serveur
+            await page.goto(
+                `https://aternos.org/server/${ATERNOS_SERVER}`,
+                { waitUntil: 'networkidle2' }
+            );
+
+            // Cliquer Start
+            await page.waitForSelector('.server-start');
+            await page.click('.server-start');
+
+            await browser.close();
+
+            await interaction.editReply('✅ Serveur Aternos démarré !');
         } catch (err) {
             console.error(err);
-            await interaction.editReply('❌ Erreur au démarrage du serveur.');
+            await interaction.editReply('❌ Erreur lors du démarrage.');
         }
     }
 });
@@ -44,22 +68,16 @@ async function registerCommands() {
     const commands = [
         new SlashCommandBuilder()
             .setName('start')
-            .setDescription('Démarre le serveur Minecraft Aternos')
+            .setDescription('Démarrer le serveur Minecraft')
             .toJSON()
     ];
 
     const rest = new REST({ version: '10' }).setToken(TOKEN);
 
-    try {
-        await rest.put(
-            Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
-            { body: commands }
-        );
-
-        console.log('✅ Slash command enregistrée');
-    } catch (error) {
-        console.error(error);
-    }
+    await rest.put(
+        Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
+        { body: commands }
+    );
 }
 
 registerCommands();
