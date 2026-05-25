@@ -21,40 +21,79 @@ const client = new Client({
     intents: [GatewayIntentBits.Guilds]
 });
 
+// Bot prêt
 client.once(Events.ClientReady, () => {
     console.log(`✅ Bot connecté : ${client.user.tag}`);
 });
 
+// Slash Command
 client.on(Events.InteractionCreate, async interaction => {
     if (!interaction.isChatInputCommand()) return;
-
     if (interaction.commandName !== 'start') return;
 
-    await interaction.reply('⏳ Connexion à Aternos...');
+    await interaction.reply('⏳ Démarrage du serveur Aternos...');
+
+    let browser;
 
     try {
-        const browser = await puppeteer.launch({
+        browser = await puppeteer.launch({
             headless: true,
-            args: ['--no-sandbox', '--disable-setuid-sandbox']
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-gpu'
+            ]
         });
 
         const page = await browser.newPage();
 
-        // Aller à la page login
-        await page.goto('https://aternos.org/login/', {
-            waitUntil: 'networkidle2',
+        // User agent pour éviter certains blocages
+        await page.setUserAgent(
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36'
+        );
+
+        // Aller sur Aternos
+        await page.goto('https://aternos.org/go/', {
+            waitUntil: 'domcontentloaded',
             timeout: 60000
         });
 
-        // Attendre les champs
-        await page.waitForSelector('input[name="user"]', {
-            timeout: 15000
+        // Attendre chargement
+        await new Promise(resolve =>
+            setTimeout(resolve, 5000)
+        );
+
+        console.log('🌍 URL actuelle:', page.url());
+
+        // Accepter cookies si popup
+        try {
+            await page.click('.fc-button.fc-cta-consent');
+            console.log('✅ Cookies acceptés');
+        } catch {
+            console.log('ℹ️ Pas de popup cookie');
+        }
+
+        // Attendre champs login
+        await page.waitForSelector('input', {
+            timeout: 30000
         });
 
-        // Login
-        await page.type('input[name="user"]', ATERNOS_USER);
-        await page.type('input[name="password"]', ATERNOS_PASSWORD);
+        const inputs = await page.$$('input');
 
+        if (inputs.length < 2) {
+            throw new Error(
+                'Impossible de trouver les champs login'
+            );
+        }
+
+        // Login
+        await inputs[0].type(ATERNOS_USER);
+        await inputs[1].type(ATERNOS_PASSWORD);
+
+        console.log('✅ Login rempli');
+
+        // Connexion
         await Promise.all([
             page.click('button[type="submit"]'),
             page.waitForNavigation({
@@ -63,7 +102,9 @@ client.on(Events.InteractionCreate, async interaction => {
             })
         ]);
 
-        // Aller au serveur
+        console.log('✅ Connecté à Aternos');
+
+        // Ouvrir serveur
         await page.goto(
             `https://aternos.org/server/${ATERNOS_SERVER}`,
             {
@@ -72,48 +113,72 @@ client.on(Events.InteractionCreate, async interaction => {
             }
         );
 
-        // Attendre le bouton start
+        console.log('✅ Page serveur ouverte');
+
+        // Attendre bouton start
         await page.waitForSelector('.server-start', {
-            timeout: 20000
+            timeout: 30000
         });
 
+        // Cliquer start
         await page.click('.server-start');
 
-        await browser.close();
+        console.log('🚀 Serveur démarré');
 
         await interaction.editReply(
-            '✅ Serveur Aternos démarré !'
+            '✅ Serveur Minecraft démarré !'
         );
 
     } catch (err) {
-        console.error(err);
+        console.error('❌ Erreur complète:', err);
 
         await interaction.editReply(
             `❌ Erreur : ${err.message}`
         );
+    } finally {
+        if (browser) {
+            await browser.close();
+        }
     }
 });
 
+// Enregistrer slash command
 async function registerCommands() {
     const commands = [
         new SlashCommandBuilder()
             .setName('start')
-            .setDescription('Démarre le serveur Minecraft')
+            .setDescription(
+                'Démarre le serveur Minecraft Aternos'
+            )
             .toJSON()
     ];
 
-    const rest = new REST({ version: '10' }).setToken(TOKEN);
+    const rest = new REST({
+        version: '10'
+    }).setToken(TOKEN);
 
-    await rest.put(
-        Routes.applicationGuildCommands(
-            CLIENT_ID,
-            GUILD_ID
-        ),
-        { body: commands }
-    );
+    try {
+        await rest.put(
+            Routes.applicationGuildCommands(
+                CLIENT_ID,
+                GUILD_ID
+            ),
+            {
+                body: commands
+            }
+        );
 
-    console.log('✅ Slash command créée');
+        console.log(
+            '✅ Commande /start enregistrée'
+        );
+    } catch (err) {
+        console.error(
+            '❌ Erreur commande slash:',
+            err
+        );
+    }
 }
 
 registerCommands();
+
 client.login(TOKEN);
