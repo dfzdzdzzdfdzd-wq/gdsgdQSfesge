@@ -1,0 +1,12 @@
+{
+  "name": "aternos-discord-bot",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "aternos-api": "^0.0.5",
+    "discord.js": "^14.21.0"
+  }
+}
