@@ -1,4 +1,12 @@
-const { Client, GatewayIntentBits, SlashCommandBuilder, REST, Routes } = require('discord.js');
+const {
+    Client,
+    GatewayIntentBits,
+    SlashCommandBuilder,
+    REST,
+    Routes,
+    Events
+} = require('discord.js');
+
 const puppeteer = require('puppeteer');
 
 const TOKEN = process.env.TOKEN;
@@ -13,54 +21,76 @@ const client = new Client({
     intents: [GatewayIntentBits.Guilds]
 });
 
-client.once('ready', () => {
+client.once(Events.ClientReady, () => {
     console.log(`✅ Bot connecté : ${client.user.tag}`);
 });
 
-client.on('interactionCreate', async interaction => {
+client.on(Events.InteractionCreate, async interaction => {
     if (!interaction.isChatInputCommand()) return;
 
-    if (interaction.commandName === 'start') {
-        await interaction.reply('⏳ Démarrage du serveur Aternos...');
+    if (interaction.commandName !== 'start') return;
 
-        try {
-            const browser = await puppeteer.launch({
-                headless: true,
-                args: ['--no-sandbox', '--disable-setuid-sandbox']
-            });
+    await interaction.reply('⏳ Connexion à Aternos...');
 
-            const page = await browser.newPage();
+    try {
+        const browser = await puppeteer.launch({
+            headless: true,
+            args: ['--no-sandbox', '--disable-setuid-sandbox']
+        });
 
-            await page.goto('https://aternos.org/go/', {
-                waitUntil: 'networkidle2'
-            });
+        const page = await browser.newPage();
 
-            // Login
-            await page.type('input[name="user"]', ATERNOS_USER);
-            await page.type('input[name="password"]', ATERNOS_PASSWORD);
+        // Aller à la page login
+        await page.goto('https://aternos.org/login/', {
+            waitUntil: 'networkidle2',
+            timeout: 60000
+        });
 
-            await Promise.all([
-                page.click('button[type="submit"]'),
-                page.waitForNavigation()
-            ]);
+        // Attendre les champs
+        await page.waitForSelector('input[name="user"]', {
+            timeout: 15000
+        });
 
-            // Ouvrir le serveur
-            await page.goto(
-                `https://aternos.org/server/${ATERNOS_SERVER}`,
-                { waitUntil: 'networkidle2' }
-            );
+        // Login
+        await page.type('input[name="user"]', ATERNOS_USER);
+        await page.type('input[name="password"]', ATERNOS_PASSWORD);
 
-            // Cliquer Start
-            await page.waitForSelector('.server-start');
-            await page.click('.server-start');
+        await Promise.all([
+            page.click('button[type="submit"]'),
+            page.waitForNavigation({
+                waitUntil: 'networkidle2',
+                timeout: 60000
+            })
+        ]);
 
-            await browser.close();
+        // Aller au serveur
+        await page.goto(
+            `https://aternos.org/server/${ATERNOS_SERVER}`,
+            {
+                waitUntil: 'networkidle2',
+                timeout: 60000
+            }
+        );
 
-            await interaction.editReply('✅ Serveur Aternos démarré !');
-        } catch (err) {
-            console.error(err);
-            await interaction.editReply('❌ Erreur lors du démarrage.');
-        }
+        // Attendre le bouton start
+        await page.waitForSelector('.server-start', {
+            timeout: 20000
+        });
+
+        await page.click('.server-start');
+
+        await browser.close();
+
+        await interaction.editReply(
+            '✅ Serveur Aternos démarré !'
+        );
+
+    } catch (err) {
+        console.error(err);
+
+        await interaction.editReply(
+            `❌ Erreur : ${err.message}`
+        );
     }
 });
 
@@ -68,16 +98,21 @@ async function registerCommands() {
     const commands = [
         new SlashCommandBuilder()
             .setName('start')
-            .setDescription('Démarrer le serveur Minecraft')
+            .setDescription('Démarre le serveur Minecraft')
             .toJSON()
     ];
 
     const rest = new REST({ version: '10' }).setToken(TOKEN);
 
     await rest.put(
-        Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
+        Routes.applicationGuildCommands(
+            CLIENT_ID,
+            GUILD_ID
+        ),
         { body: commands }
     );
+
+    console.log('✅ Slash command créée');
 }
 
 registerCommands();
